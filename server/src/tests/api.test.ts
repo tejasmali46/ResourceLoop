@@ -17,6 +17,7 @@ describe('ResourceLoop Backend API Tests', () => {
   let hodToken = '';
   let managerToken = '';
   let adminToken = '';
+  let facultyRoboticsToken = '';
   let seminarHallId = '';
   let projectorPoolId = '';
   let ecellClubId = '';
@@ -36,6 +37,10 @@ describe('ResourceLoop Backend API Tests', () => {
       'Multi-Stage Capstone Showcase 2026',
       'Timezone-Aware Hackathon 2026',
       'Middle of the Night Event',
+      'AI Robotics Workshop 2026',
+      'Direct-to-Operations Small Seminar 2026',
+      'High-Scale Departmental Conclave 2026',
+      'Admin Oversight Showcase 2026',
     ];
     for (const title of testTitles) {
       const existingList = await EventRequest.find({ title });
@@ -78,6 +83,12 @@ describe('ResourceLoop Backend API Tests', () => {
       .post('/api/v1/auth/login')
       .send({ email: 'admin@resourceloop.edu', password: 'Password@123' });
     adminToken = adminRes.body.token;
+
+    // Login robotics faculty coordinator (Faculty B)
+    const roboRes = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'faculty.robotics@resourceloop.edu', password: 'Password@123' });
+    facultyRoboticsToken = roboRes.body.token;
 
     // Retrieve test entities
     const hall = await Resource.findOne({ code: 'SEM-HALL-101' });
@@ -1105,5 +1116,327 @@ describe('ResourceLoop Backend API Tests', () => {
     await Reservation.deleteMany({ event: createdEventId });
     await ApprovalTask.deleteMany({ request: createdEventId });
     await EventRequest.deleteOne({ _id: createdEventId });
+  });
+
+  it('40. Bug 1 Regression: Faculty List queries only pure FACULTY roles (excludes HOD), and student request assigns designated Faculty Coordinator', async () => {
+    // 1. GET /api/v1/meta/faculty
+    const facultyListRes = await request(app).get('/api/v1/meta/faculty');
+    expect(facultyListRes.status).toBe(200);
+    expect(facultyListRes.body.success).toBe(true);
+
+    const names = facultyListRes.body.faculty.map((f: any) => f.name);
+    expect(names).toContain('Prof. Elena Vance');
+    expect(names).toContain('Dr. Marcus Brody');
+    // Crucial: HOD Prof. Arvind Sharma must NOT be returned as a Faculty Coordinator
+    expect(names).not.toContain('Prof. Arvind Sharma');
+
+    // 2. Submit event request for E-Cell club with attendance 40
+    const start = new Date();
+    start.setDate(start.getDate() + 10);
+    start.setHours(11, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(13, 0, 0, 0);
+
+    const submitRes = await request(app)
+      .post('/api/v1/events')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        title: 'AI Robotics Workshop 2026',
+        description: 'Verifying designated coordinator assignment and HOD separation.',
+        eventType: 'WORKSHOP',
+        organizingClubId: ecellClubId,
+        departmentId: cseDeptId,
+        facultyCoordinatorId: facultyId, // Prof. Elena Vance
+        venueId: seminarHallId,
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+        expectedAttendance: 40,
+      });
+
+    expect(submitRes.status).toBe(201);
+    expect(submitRes.body.event.facultyCoordinator).toBe(facultyId);
+
+    // Verify ApprovalTask is assigned to Prof. Elena Vance
+    const task = await ApprovalTask.findOne({ request: submitRes.body.event._id, stage: 'FACULTY_REVIEW' });
+    expect(task).toBeDefined();
+    expect(task!.assignedReviewer!.toString()).toBe(facultyId);
+
+    // Clean up
+    await Reservation.deleteMany({ event: submitRes.body.event._id });
+    await ApprovalTask.deleteMany({ request: submitRes.body.event._id });
+    await EventRequest.deleteOne({ _id: submitRes.body.event._id });
+  });
+
+  it('41. Bug 2 Regression: Assigned Faculty Coordinator can approve; Unassigned Faculty Coordinator B is rejected; Admin is authorized', async () => {
+    const start = new Date();
+    start.setDate(start.getDate() + 12);
+    start.setHours(14, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(16, 0, 0, 0);
+
+    // Create event assigned to Prof. Elena Vance (facultyId)
+    const submitRes = await request(app)
+      .post('/api/v1/events')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        title: 'Direct-to-Operations Small Seminar 2026',
+        description: 'Academic review test with unassigned faculty rejection checks.',
+        eventType: 'WORKSHOP',
+        organizingClubId: ecellClubId,
+        departmentId: cseDeptId,
+        facultyCoordinatorId: facultyId,
+        venueId: seminarHallId,
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+        expectedAttendance: 35,
+      });
+
+    expect(submitRes.status).toBe(201);
+    const eventId = submitRes.body.event._id;
+
+    // Scenario B: Unassigned Faculty Coordinator B (Dr. Marcus Brody) attempts to approve -> Must be rejected (400/403)
+    const unassignedRes = await request(app)
+      .post('/api/v1/approvals/decision')
+      .set('Authorization', `Bearer ${facultyRoboticsToken}`)
+      .send({
+        eventId,
+        decision: 'APPROVED',
+        reason: 'Unassigned reviewer attempting unauthorized approval.',
+      });
+
+    expect(unassignedRes.status).toBe(400);
+    expect(unassignedRes.body.message).toContain('Unauthorized: Only the assigned Faculty Coordinator or an Admin');
+
+    // Scenario A: Assigned Faculty Coordinator (Prof. Elena Vance) approves -> 200 OK
+    const assignedRes = await request(app)
+      .post('/api/v1/approvals/decision')
+      .set('Authorization', `Bearer ${facultyToken}`)
+      .send({
+        eventId,
+        decision: 'APPROVED',
+        reason: 'Academic scope confirmed. Sponsoring this club activity.',
+      });
+
+    expect(assignedRes.status).toBe(200);
+    expect(assignedRes.body.success).toBe(true);
+
+    // Scenario C: Reviewer attempts to review a request that has already passed FACULTY_REVIEW
+    const duplicateRes = await request(app)
+      .post('/api/v1/approvals/decision')
+      .set('Authorization', `Bearer ${facultyToken}`)
+      .send({
+        eventId,
+        decision: 'APPROVED',
+        reason: 'Attempting duplicate approval on already-passed stage.',
+      });
+
+    expect(duplicateRes.status).toBe(400);
+    expect(duplicateRes.body.message).toMatch(/(Unauthorized|No review action)/);
+
+    // Clean up
+    await Reservation.deleteMany({ event: eventId });
+    await ApprovalTask.deleteMany({ request: eventId });
+    await import('../models/ApprovalDecision.js').then((m) => m.ApprovalDecision.deleteMany({ event: eventId }));
+    await EventRequest.deleteOne({ _id: eventId });
+  });
+
+  it('42. Critical Workflow Rule: Expected attendance < 100 bypasses HOD and moves straight to Resource Manager', async () => {
+    const start = new Date();
+    start.setDate(start.getDate() + 14);
+    start.setHours(11, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(13, 0, 0, 0);
+
+    const submitRes = await request(app)
+      .post('/api/v1/events')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        title: 'Direct-to-Operations Small Seminar 2026',
+        description: 'Attendance < 100 bypasses HOD stage.',
+        eventType: 'WORKSHOP',
+        organizingClubId: ecellClubId,
+        departmentId: cseDeptId,
+        facultyCoordinatorId: facultyId,
+        venueId: seminarHallId,
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+        expectedAttendance: 45, // < 100
+      });
+
+    expect(submitRes.status).toBe(201);
+    const eventId = submitRes.body.event._id;
+    expect(submitRes.body.event.requiresHodApproval).toBe(false);
+
+    // Faculty approves
+    const facultyApproveRes = await request(app)
+      .post('/api/v1/approvals/decision')
+      .set('Authorization', `Bearer ${facultyToken}`)
+      .send({
+        eventId,
+        decision: 'APPROVED',
+        reason: 'Curriculum alignment confirmed.',
+      });
+
+    expect(facultyApproveRes.status).toBe(200);
+    // HOD review skipped! Must be at RESOURCE_MANAGER_REVIEW stage
+    expect(facultyApproveRes.body.event.status).toBe('APPROVED_PENDING_RESOURCE_CONFIRMATION');
+    expect(facultyApproveRes.body.event.currentApprovalStage).toBe('RESOURCE_MANAGER_REVIEW');
+
+    // Manager confirms
+    const managerRes = await request(app)
+      .post('/api/v1/approvals/decision')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({
+        eventId,
+        decision: 'APPROVED',
+        reason: 'Resource availability verified and locked.',
+      });
+
+    expect(managerRes.status).toBe(200);
+    expect(managerRes.body.event.status).toBe('CONFIRMED');
+
+    // Clean up
+    await Reservation.deleteMany({ event: eventId });
+    await ApprovalTask.deleteMany({ request: eventId });
+    await import('../models/ApprovalDecision.js').then((m) => m.ApprovalDecision.deleteMany({ event: eventId }));
+    await EventRequest.deleteOne({ _id: eventId });
+  });
+
+  it('43. Critical Workflow Rule: Expected attendance >= 100 requires HOD approval before Resource Manager', async () => {
+    const start = new Date();
+    start.setDate(start.getDate() + 16);
+    start.setHours(10, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(14, 0, 0, 0);
+
+    const submitRes = await request(app)
+      .post('/api/v1/events')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        title: 'High-Scale Departmental Conclave 2026',
+        description: 'Attendance >= 100 triggers mandatory HOD authorization.',
+        eventType: 'HACKATHON',
+        organizingClubId: ecellClubId,
+        departmentId: cseDeptId,
+        facultyCoordinatorId: facultyId,
+        venueId: seminarHallId,
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+        expectedAttendance: 140, // >= 100
+      });
+
+    expect(submitRes.status).toBe(201);
+    const eventId = submitRes.body.event._id;
+    expect(submitRes.body.event.requiresHodApproval).toBe(true);
+
+    // Faculty approves
+    const facultyApproveRes = await request(app)
+      .post('/api/v1/approvals/decision')
+      .set('Authorization', `Bearer ${facultyToken}`)
+      .send({
+        eventId,
+        decision: 'APPROVED',
+        reason: 'Endorsed for large campus attendance.',
+      });
+
+    expect(facultyApproveRes.status).toBe(200);
+    // Mandatory HOD_REVIEW stage
+    expect(facultyApproveRes.body.event.status).toBe('UNDER_REVIEW');
+    expect(facultyApproveRes.body.event.currentApprovalStage).toBe('HOD_REVIEW');
+
+    // HOD approves
+    const hodApproveRes = await request(app)
+      .post('/api/v1/approvals/decision')
+      .set('Authorization', `Bearer ${hodToken}`)
+      .send({
+        eventId,
+        decision: 'APPROVED',
+        reason: 'Departmental sanction granted.',
+      });
+
+    expect(hodApproveRes.status).toBe(200);
+    expect(hodApproveRes.body.event.status).toBe('APPROVED_PENDING_RESOURCE_CONFIRMATION');
+    expect(hodApproveRes.body.event.currentApprovalStage).toBe('RESOURCE_MANAGER_REVIEW');
+
+    // Clean up
+    await Reservation.deleteMany({ event: eventId });
+    await ApprovalTask.deleteMany({ request: eventId });
+    await import('../models/ApprovalDecision.js').then((m) => m.ApprovalDecision.deleteMany({ event: eventId }));
+    await EventRequest.deleteOne({ _id: eventId });
+  });
+
+  it('44. Bug 3 Regression: Institution Administrator sees requests across Faculty dashboard, HOD dashboard, and Analytics governance queue', async () => {
+    const start = new Date();
+    start.setDate(start.getDate() + 18);
+    start.setHours(11, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(13, 0, 0, 0);
+
+    const submitRes = await request(app)
+      .post('/api/v1/events')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        title: 'Admin Oversight Showcase 2026',
+        description: 'Verifying Admin request visibility across dashboards and analytics.',
+        eventType: 'WORKSHOP',
+        organizingClubId: ecellClubId,
+        departmentId: cseDeptId,
+        facultyCoordinatorId: facultyId,
+        venueId: seminarHallId,
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+        expectedAttendance: 25,
+      });
+
+    expect(submitRes.status).toBe(201);
+    const eventId = submitRes.body.event._id;
+
+    // 1. Admin accesses GET /api/v1/approvals/faculty-dashboard
+    const adminFacRes = await request(app)
+      .get('/api/v1/approvals/faculty-dashboard')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(adminFacRes.status).toBe(200);
+    expect(adminFacRes.body.success).toBe(true);
+    const pendingIds = adminFacRes.body.pendingApprovals.map((e: any) => e._id);
+    expect(pendingIds).toContain(eventId);
+
+    // 2. Admin accesses GET /api/v1/approvals/hod-dashboard
+    const adminHodRes = await request(app)
+      .get('/api/v1/approvals/hod-dashboard')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(adminHodRes.status).toBe(200);
+    expect(adminHodRes.body.success).toBe(true);
+
+    // 3. Admin accesses GET /api/v1/analytics/institution -> recentEvents contains submitted request
+    const adminAnalyticsRes = await request(app)
+      .get('/api/v1/analytics/institution')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(adminAnalyticsRes.status).toBe(200);
+    expect(adminAnalyticsRes.body.success).toBe(true);
+    expect(adminAnalyticsRes.body.data.recentEvents).toBeDefined();
+    const recentEventIds = adminAnalyticsRes.body.data.recentEvents.map((e: any) => e._id);
+    expect(recentEventIds).toContain(eventId);
+
+    // 4. Scenario D: Admin performs review decision successfully
+    const adminDecisionRes = await request(app)
+      .post('/api/v1/approvals/decision')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        eventId,
+        decision: 'APPROVED',
+        reason: 'Institution Administrator academic clearance.',
+      });
+
+    expect(adminDecisionRes.status).toBe(200);
+    expect(adminDecisionRes.body.success).toBe(true);
+
+    // Clean up
+    await Reservation.deleteMany({ event: eventId });
+    await ApprovalTask.deleteMany({ request: eventId });
+    await import('../models/ApprovalDecision.js').then((m) => m.ApprovalDecision.deleteMany({ event: eventId }));
+    await EventRequest.deleteOne({ _id: eventId });
   });
 });

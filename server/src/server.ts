@@ -18,6 +18,23 @@ async function bootstrap() {
       if (userCount === 0) {
         console.log('🌱 Empty database detected on startup. Initializing demo accounts and resources...');
         await seedDatabase(false);
+      } else {
+        // Safe coordinator alignment check: ensure no events have HOD stored as facultyCoordinator
+        const { EventRequest } = await import('./models/EventRequest.js');
+        const { ApprovalTask } = await import('./models/ApprovalTask.js');
+        const misassigned = await EventRequest.find().populate('organizingClub facultyCoordinator');
+        for (const evt of misassigned) {
+          const club = evt.organizingClub as any;
+          const faculty = evt.facultyCoordinator as any;
+          if (club && club.facultyCoordinator && faculty && faculty.role === 'HOD') {
+            evt.facultyCoordinator = club.facultyCoordinator;
+            await evt.save();
+            await ApprovalTask.updateMany(
+              { request: evt._id, stage: 'FACULTY_REVIEW' },
+              { assignedReviewer: club.facultyCoordinator }
+            );
+          }
+        }
       }
     } catch (seedErr) {
       console.warn('Auto-seed check skipped or failed:', seedErr);

@@ -25,7 +25,7 @@ export async function processApprovalDecision(
     .populate('organizer', 'name email')
     .populate('facultyCoordinator', 'name email department')
     .populate('department', 'name code hod')
-    .populate('organizingClub', 'name code');
+    .populate('organizingClub', 'name code facultyCoordinator');
 
   if (!event) {
     throw new Error('Event request not found');
@@ -44,9 +44,17 @@ export async function processApprovalDecision(
   const isAdmin = reviewerRoles.includes('ADMIN');
 
   if (currentStage === 'FACULTY_REVIEW') {
+    const assignedFacultyId =
+      (event.facultyCoordinator as any)?._id?.toString() ||
+      event.facultyCoordinator?.toString();
+    const clubCoordinatorId =
+      (event.organizingClub as any)?.facultyCoordinator?._id?.toString() ||
+      (event.organizingClub as any)?.facultyCoordinator?.toString();
+
     const isAssignedFaculty =
-      event.facultyCoordinator &&
-      event.facultyCoordinator._id.toString() === reviewer._id.toString();
+      (assignedFacultyId && assignedFacultyId === reviewer._id.toString()) ||
+      (clubCoordinatorId && clubCoordinatorId === reviewer._id.toString());
+
     if (!isAssignedFaculty && !isAdmin) {
       throw new Error('Unauthorized: Only the assigned Faculty Coordinator or an Admin can review this stage.');
     }

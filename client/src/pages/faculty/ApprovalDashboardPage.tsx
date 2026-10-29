@@ -177,7 +177,7 @@ export const ApprovalDashboardPage: React.FC = () => {
         <div>
           <div className="flex items-center space-x-2">
             <span className="bg-teal-50 text-teal-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase border border-teal-200/80">
-              {viewMode === 'HOD' ? 'Department Head (HOD)' : 'Faculty Coordinator'} Portal
+              {user?.role === 'ADMIN' ? 'Institution Administrator' : viewMode === 'HOD' ? 'Department Head (HOD)' : 'Faculty Coordinator'} Portal
             </span>
             <span className="text-xs text-slate-400">• Institutional Governance</span>
           </div>
@@ -342,6 +342,7 @@ export const ApprovalDashboardPage: React.FC = () => {
                         <th className="py-3 px-4">Reference</th>
                         <th className="py-3 px-4">Event Title</th>
                         <th className="py-3 px-4">Club / Organizer</th>
+                        <th className="py-3 px-4">Faculty Mentor</th>
                         <th className="py-3 px-4">Department</th>
                         <th className="py-3 px-4">Requested Date</th>
                         <th className="py-3 px-4">Venue</th>
@@ -366,6 +367,11 @@ export const ApprovalDashboardPage: React.FC = () => {
                             </span>
                             <span className="text-[10px] text-slate-400">
                               {evt.organizer?.name}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="text-slate-800 font-medium block">
+                              {evt.facultyCoordinator?.name || 'Unassigned'}
                             </span>
                           </td>
                           <td className="py-3.5 px-4">

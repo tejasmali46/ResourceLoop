@@ -74,11 +74,19 @@ export async function verifyClub(req: AuthRequest, res: Response, next: NextFunc
 
 export async function getFacultyList(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const faculty = await User.find({
-      $or: [{ role: 'FACULTY' }, { roles: 'FACULTY' }, { role: 'HOD' }, { roles: 'HOD' }],
-    })
+    const { departmentId } = req.query;
+    const filter: any = {
+      role: 'FACULTY',
+      isActive: true,
+    };
+    if (departmentId) {
+      filter.department = departmentId;
+    }
+
+    const faculty = await User.find(filter)
       .select('name email role department')
-      .populate('department', 'name code');
+      .populate('department', 'name code')
+      .sort({ name: 1 });
     res.status(200).json({ success: true, faculty });
   } catch (error) {
     next(error);

@@ -8,6 +8,7 @@ import { Department } from '../models/Department.js';
 import { ApprovalTask } from '../models/ApprovalTask.js';
 import { ApprovalDecision } from '../models/ApprovalDecision.js';
 import { HandoverRecord } from '../models/HandoverRecord.js';
+import { User } from '../models/User.js';
 import { AuthRequest } from '../middleware/auth.js';
 import { checkResourceAvailability, promoteWaitlistedReservations } from '../services/schedulingEngine.js';
 import { evaluateClubFairUsage } from '../services/fairAllocationService.js';
@@ -82,6 +83,23 @@ export async function createEventRequest(req: AuthRequest, res: Response, next: 
       });
       return;
     }
+
+    // Validate and resolve Faculty Coordinator
+    let assignedFaculty = await User.findById(facultyCoordinatorId);
+    // If the assigned faculty is an HOD (or not found), and club has a designated faculty coordinator, resolve to club's coordinator
+    if ((!assignedFaculty || assignedFaculty.role === 'HOD') && club.facultyCoordinator) {
+      const clubFaculty = await User.findById((club.facultyCoordinator as any)._id || club.facultyCoordinator);
+      if (clubFaculty && clubFaculty.role === 'FACULTY') {
+        assignedFaculty = clubFaculty;
+      }
+    }
+
+    if (!assignedFaculty) {
+      res.status(400).json({ success: false, message: 'Valid assigned Faculty Coordinator is required.' });
+      return;
+    }
+
+    const resolvedFacultyCoordinatorId = assignedFaculty._id;
 
     // Fair allocation check
     const fairCheck = await evaluateClubFairUsage(club._id, eventType);
@@ -184,7 +202,7 @@ export async function createEventRequest(req: AuthRequest, res: Response, next: 
       organizingClub: club._id,
       organizer: user._id,
       department: departmentId,
-      facultyCoordinator: facultyCoordinatorId,
+      facultyCoordinator: resolvedFacultyCoordinatorId,
       venue: venueId || undefined,
       startDate: start,
       endDate: end,
@@ -230,7 +248,7 @@ export async function createEventRequest(req: AuthRequest, res: Response, next: 
       await ApprovalTask.create({
         request: event._id,
         stage: 'FACULTY_REVIEW',
-        assignedReviewer: facultyCoordinatorId,
+        assignedReviewer: resolvedFacultyCoordinatorId,
         assignedReviewerRole: 'FACULTY',
         department: departmentId,
         status: 'ACTIONABLE',
@@ -260,7 +278,7 @@ export async function createEventRequest(req: AuthRequest, res: Response, next: 
 
       // Dispatch notification to Faculty Coordinator
       await createNotification({
-        recipient: facultyCoordinatorId,
+        recipient: resolvedFacultyCoordinatorId,
         title: 'New Event Approval Request',
         message: `${user.name} submitted an event request "${title}" for ${club.name}. Awaiting your review.`,
         type: 'REVIEW_ASSIGNED',

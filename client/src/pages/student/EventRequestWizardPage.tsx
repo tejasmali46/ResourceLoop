@@ -67,6 +67,7 @@ export const EventRequestWizardPage: React.FC = () => {
       api.getResources({ operationalStatus: 'AVAILABLE' }),
     ])
       .then(([dRes, cRes, fRes, rRes]) => {
+        let initialFacultyId = '';
         if (dRes.success) {
           setDepartments(dRes.departments);
           if (dRes.departments.length > 0) setDepartmentId(dRes.departments[0]._id);
@@ -79,14 +80,17 @@ export const EventRequestWizardPage: React.FC = () => {
               setDepartmentId(cRes.clubs[0].department._id || cRes.clubs[0].department);
             }
             if (cRes.clubs[0].facultyCoordinator) {
-              setFacultyCoordinatorId(cRes.clubs[0].facultyCoordinator._id || cRes.clubs[0].facultyCoordinator);
+              initialFacultyId = cRes.clubs[0].facultyCoordinator._id || cRes.clubs[0].facultyCoordinator;
+              setFacultyCoordinatorId(initialFacultyId);
             }
           }
         }
         if (fRes.success) {
           setFacultyList(fRes.faculty);
-          if (fRes.faculty.length > 0 && !facultyCoordinatorId) {
-            setFacultyCoordinatorId(fRes.faculty[0]._id);
+          // Only fallback to first available faculty member if the club had no designated coordinator
+          if (!initialFacultyId && fRes.faculty.length > 0) {
+            initialFacultyId = fRes.faculty[0]._id;
+            setFacultyCoordinatorId(initialFacultyId);
           }
         }
         if (rRes.success) {
@@ -699,6 +703,13 @@ export const EventRequestWizardPage: React.FC = () => {
                   <span className="text-slate-400 block mb-0.5 font-bold uppercase text-[10px]">Attendance:</span>
                   <span className="font-bold text-slate-800">{expectedAttendance} attendees</span>
                 </div>
+              </div>
+
+              <div>
+                <span className="text-slate-400 block mb-1 font-bold uppercase text-[10px]">Sponsoring Faculty Coordinator:</span>
+                <p className="font-bold text-teal-900">
+                  {facultyList.find((f) => f._id === facultyCoordinatorId)?.name || 'Assigned Faculty Coordinator'}
+                </p>
               </div>
 
               <div>

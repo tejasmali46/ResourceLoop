@@ -185,20 +185,27 @@ export async function forwardOrReassignTask(req: AuthRequest, res: Response, nex
 export async function getFacultyDashboard(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const user = req.user!;
+    const userRoles = user.roles?.length ? user.roles : [user.role];
+    const isAdmin = userRoles.includes('ADMIN');
     const facultyId = user._id;
 
-    // 1. Pending approvals assigned to this faculty
-    const pendingTasks = await ApprovalTask.find({
+    // 1. Pending approvals assigned to this faculty (or all faculty review tasks for Admin)
+    const taskQuery: any = {
       stage: 'FACULTY_REVIEW',
       status: 'ACTIONABLE',
-      $or: [{ assignedReviewer: facultyId }, { assignedReviewer: null }, { department: user.department }],
-    })
+    };
+    if (!isAdmin) {
+      taskQuery.$or = [{ assignedReviewer: facultyId }, { assignedReviewer: null }, { department: user.department }];
+    }
+
+    const pendingTasks = await ApprovalTask.find(taskQuery)
       .populate({
         path: 'request',
         populate: [
           { path: 'organizer', select: 'name email phone' },
           { path: 'organizingClub', select: 'name code category' },
           { path: 'department', select: 'name code' },
+          { path: 'facultyCoordinator', select: 'name email' },
           { path: 'venue', select: 'name code location capacity' },
         ],
       })
@@ -207,60 +214,84 @@ export async function getFacultyDashboard(req: AuthRequest, res: Response, next:
     const pendingRequests = pendingTasks.map((t) => t.request).filter(Boolean);
 
     // Fallback for events with currentApprovalStage === 'FACULTY_REVIEW'
-    const extraPending = await EventRequest.find({
+    const extraPendingQuery: any = {
       status: { $in: ['UNDER_REVIEW', 'RESUBMITTED'] },
       currentApprovalStage: 'FACULTY_REVIEW',
-      facultyCoordinator: facultyId,
       _id: { $nin: pendingRequests.map((r: any) => r._id) },
-    })
+    };
+    if (!isAdmin) {
+      extraPendingQuery.facultyCoordinator = facultyId;
+    }
+
+    const extraPending = await EventRequest.find(extraPendingQuery)
       .populate('organizer', 'name email phone')
       .populate('organizingClub', 'name code category')
       .populate('department', 'name code')
+      .populate('facultyCoordinator', 'name email')
       .populate('venue', 'name code location capacity');
 
     const allPending = [...pendingRequests, ...extraPending];
 
-    // 2. In Review (faculty coordinator for this event)
-    const inReview = await EventRequest.find({
-      facultyCoordinator: facultyId,
+    // 2. In Review
+    const inReviewQuery: any = {
       status: 'UNDER_REVIEW',
-    })
+    };
+    if (!isAdmin) {
+      inReviewQuery.facultyCoordinator = facultyId;
+    }
+
+    const inReview = await EventRequest.find(inReviewQuery)
       .populate('organizer', 'name email')
       .populate('organizingClub', 'name code')
+      .populate('facultyCoordinator', 'name email')
       .populate('venue', 'name code location')
       .sort({ updatedAt: -1 });
 
     // 3. Changes Requested
-    const changesRequested = await EventRequest.find({
-      facultyCoordinator: facultyId,
+    const changesQuery: any = {
       status: 'CHANGES_REQUESTED',
-    })
+    };
+    if (!isAdmin) {
+      changesQuery.facultyCoordinator = facultyId;
+    }
+
+    const changesRequested = await EventRequest.find(changesQuery)
       .populate('organizer', 'name email')
       .populate('organizingClub', 'name code')
+      .populate('facultyCoordinator', 'name email')
       .populate('venue', 'name code location')
       .sort({ updatedAt: -1 });
 
     // 4. Recently completed decisions
-    const recentDecisions = await ApprovalDecision.find({
-      reviewer: facultyId,
-    })
+    const decisionsQuery: any = {};
+    if (!isAdmin) {
+      decisionsQuery.reviewer = facultyId;
+    }
+
+    const recentDecisions = await ApprovalDecision.find(decisionsQuery)
       .populate({
         path: 'event',
         populate: [
           { path: 'organizingClub', select: 'name code' },
           { path: 'venue', select: 'name code' },
+          { path: 'facultyCoordinator', select: 'name email' },
         ],
       })
       .sort({ createdAt: -1 })
       .limit(20);
 
-    // 5. Upcoming events mentored by this faculty
-    const upcomingEvents = await EventRequest.find({
-      facultyCoordinator: facultyId,
+    // 5. Upcoming events mentored by this faculty (or institutional for Admin)
+    const upcomingQuery: any = {
       status: { $in: ['CONFIRMED', 'IN_PROGRESS'] },
       startDate: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-    })
+    };
+    if (!isAdmin) {
+      upcomingQuery.facultyCoordinator = facultyId;
+    }
+
+    const upcomingEvents = await EventRequest.find(upcomingQuery)
       .populate('organizingClub', 'name code')
+      .populate('facultyCoordinator', 'name email')
       .populate('venue', 'name code location')
       .sort({ startDate: 1 })
       .limit(10);
@@ -282,14 +313,20 @@ export async function getFacultyDashboard(req: AuthRequest, res: Response, next:
 export async function getHodDashboard(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const user = req.user!;
+    const userRoles = user.roles?.length ? user.roles : [user.role];
+    const isAdmin = userRoles.includes('ADMIN');
     const departmentId = user.department;
 
-    // 1. Pending Department Approvals (Actionable HOD tasks)
-    const pendingTasks = await ApprovalTask.find({
+    // 1. Pending Department Approvals (Actionable HOD tasks, or all HOD tasks for Admin)
+    const taskQuery: any = {
       stage: 'HOD_REVIEW',
       status: 'ACTIONABLE',
-      $or: [{ assignedReviewer: user._id }, { department: departmentId }],
-    })
+    };
+    if (!isAdmin) {
+      taskQuery.$or = [{ assignedReviewer: user._id }, { department: departmentId }];
+    }
+
+    const pendingTasks = await ApprovalTask.find(taskQuery)
       .populate({
         path: 'request',
         populate: [
@@ -305,12 +342,16 @@ export async function getHodDashboard(req: AuthRequest, res: Response, next: Nex
     const pendingRequests = pendingTasks.map((t) => t.request).filter(Boolean);
 
     // Fallback check on EventRequest
-    const extraPending = await EventRequest.find({
-      department: departmentId,
+    const extraPendingQuery: any = {
       status: 'UNDER_REVIEW',
       currentApprovalStage: 'HOD_REVIEW',
       _id: { $nin: pendingRequests.map((r: any) => r._id) },
-    })
+    };
+    if (!isAdmin) {
+      extraPendingQuery.department = departmentId;
+    }
+
+    const extraPending = await EventRequest.find(extraPendingQuery)
       .populate('organizer', 'name email phone')
       .populate('organizingClub', 'name code category')
       .populate('department', 'name code')
@@ -334,39 +375,52 @@ export async function getHodDashboard(req: AuthRequest, res: Response, next: Nex
     );
 
     // 2. Department Schedule & Upcoming Confirmed Events
-    const upcomingEvents = await EventRequest.find({
-      department: departmentId,
+    const upcomingQuery: any = {
       status: { $in: ['CONFIRMED', 'IN_PROGRESS'] },
       startDate: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-    })
+    };
+    if (!isAdmin) {
+      upcomingQuery.department = departmentId;
+    }
+
+    const upcomingEvents = await EventRequest.find(upcomingQuery)
       .populate('organizer', 'name email')
       .populate('organizingClub', 'name code')
+      .populate('facultyCoordinator', 'name email')
       .populate('venue', 'name code location capacity')
       .sort({ startDate: 1 })
       .limit(20);
 
     // 3. Staged requests (Waiting for earlier Faculty stage)
-    const stagedRequests = await EventRequest.find({
-      department: departmentId,
+    const stagedQuery: any = {
       status: 'UNDER_REVIEW',
       currentApprovalStage: 'FACULTY_REVIEW',
       requiresHodApproval: true,
-    })
+    };
+    if (!isAdmin) {
+      stagedQuery.department = departmentId;
+    }
+
+    const stagedRequests = await EventRequest.find(stagedQuery)
       .populate('organizingClub', 'name code')
       .populate('facultyCoordinator', 'name email')
       .populate('venue', 'name code location')
       .sort({ createdAt: -1 });
 
-    // 4. Recent Decisions by this HOD or in this department
-    const recentDecisions = await ApprovalDecision.find({
-      $or: [{ reviewer: user._id }, { stage: 'HOD_REVIEW' }],
-    })
+    // 4. Recent Decisions by this HOD or in this department (or all for Admin)
+    const decisionsQuery: any = { stage: 'HOD_REVIEW' };
+    if (!isAdmin) {
+      decisionsQuery.$or = [{ reviewer: user._id }, { stage: 'HOD_REVIEW' }];
+    }
+
+    const recentDecisions = await ApprovalDecision.find(decisionsQuery)
       .populate({
         path: 'event',
-        match: { department: departmentId },
+        ...(isAdmin ? {} : { match: { department: departmentId } }),
         populate: [
           { path: 'organizingClub', select: 'name code' },
           { path: 'department', select: 'name code' },
+          { path: 'facultyCoordinator', select: 'name email' },
         ],
       })
       .sort({ createdAt: -1 })

@@ -66,6 +66,16 @@ export async function getInstitutionAnalytics(req: AuthRequest, res: Response, n
       { $project: { name: '$res.name', category: '$res.category', code: '$res.code', totalBookings: 1, totalQuantityBooked: 1 } },
     ]);
 
+    // Active event requests queue for institutional administrators
+    const recentEvents = await EventRequest.find()
+      .populate('organizer', 'name email phone')
+      .populate('organizingClub', 'name code category')
+      .populate('facultyCoordinator', 'name email')
+      .populate('department', 'name code')
+      .populate('venue', 'name code location capacity')
+      .sort({ createdAt: -1 })
+      .limit(15);
+
     res.status(200).json({
       success: true,
       data: {
@@ -79,6 +89,7 @@ export async function getInstitutionAnalytics(req: AuthRequest, res: Response, n
         topRequestedResources,
         departmentsCount: departments.length,
         clubsCount: clubs.length,
+        recentEvents,
       },
     });
   } catch (error) {
