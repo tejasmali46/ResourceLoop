@@ -1,0 +1,654 @@
+<USER_REQUEST>
+# ResourceLoop — Complete Authentication, Administration & Event Flow Integration
+
+## 1. Project Context and Primary Objective
+
+You are working on my **existing ResourceLoop project**, a role-based institutional resource-sharing platform for colleges.
+
+The platform supports sharing and booking institutional resources such as projectors, microphones, speakers, laboratories, 3D printers, classrooms, seminar halls, and event venues. Students and clubs can request resources or organize events, while faculty coordinators, HODs, resource managers, and administrators manage approvals and institutional operations.
+
+Your task is to properly integrate and fix:
+
+1. A complete, reliable login and authentication system for every existing role.
+2. Correct role-based authorization and dashboard access.
+3. Complete administration and user management.
+4. A properly connected event submission and approval flow.
+5. Regression testing to ensure all existing features continue to work.
+
+**This is an enhancement of the existing project, NOT a new project or a complete rewrite.**
+
+## 2. Non-Negotiable Rules
+
+Before changing any code:
+
+- Inspect the complete existing codebase, including frontend, backend, database models, routes, middleware, authentication, dashboards, and event workflows.
+- Identify the existing technology stack, project architecture, user roles, database schema, and API structure.
+- Understand which features already work and which are incomplete or broken.
+- Reuse existing components, APIs, models, services, and workflows wherever possible.
+
+Do not:
+
+- Rebuild the application from scratch.
+- Replace the current technology stack or database.
+- redesign the existing UI or modify its styling unnecessarily.
+- Remove, rename, or break existing features, routes, pages, or APIs.
+- Create duplicate authentication systems, user models, event models, or approval workflows.
+- Replace real database operations with mock data or frontend-only simulations.
+- introduce unrelated features or unnecessary dependencies.
+- change existing business rules unless required to implement the requested authentication, administration, or event-flow corrections.
+
+**Preserve the existing UI, layout, design, dashboards, and functionality. Make only the minimum necessary changes.**
+
+If something already works correctly, leave it unchanged.
+
+---
+
+## 3. Complete Login System for Every Role
+
+Implement or repair authentication using the project's existing architecture.
+
+The system must support every role already defined in the application, including:
+
+1. Student / Club Representative
+2. Faculty Coordinator
+3. HOD / Department Approver
+4. Resource Manager / Lab In-charge
+5. Institution Administrator
+
+First, inspect the actual role names and existing role structure in the codebase. Reuse the current definitions and map the roles above to them where appropriate. Do not create duplicate or incompatible role names.
+
+### Login requirements
+
+The login process must:
+
+1. Accept the existing login identifier, such as email or username, and password.
+2. Validate the submitted credentials against the persisted user record.
+3. Reject invalid credentials with a clear, user-friendly message.
+4. Reject or appropriately restrict disabled accounts and accounts awaiting verification.
+5. Establish a valid authenticated session or token after successful authentication.
+6. Retrieve the authenticated user's actual profile, department, account status, and assigned permissions from trusted backend data.
+7. Redirect the user to the correct existing dashboard based on their assigned role.
+8. Keep the user authenticated across page refreshes using the project's secure session strategy.
+9. Handle expired sessions, logout, and unauthorized access correctly.
+10. Prevent users from accessing protected pages by directly entering a dashboard URL.
+
+Do not rely on a role value supplied by the browser, URL, request body, or local storage as proof of authorization.
+
+### Dashboard redirection
+
+- Student / Club Representative → Existing student or club dashboard.
+- Faculty Coordinator → Existing faculty dashboard.
+- HOD / Department Approver → Existing HOD dashboard.
+- Resource Manager / Lab In-charge → Existing resource manager dashboard.
+- Institution Administrator → Existing administration dashboard.
+
+Use the actual routes already present in the project. Do not invent duplicate dashboards or unnecessary new pages.
+
+If a user has multiple legitimate roles, follow the existing role-selection logic if available. Otherwise, implement a minimal, secure role-selection approach without granting additional permissions.
+
+### Registration and account provisioning
+
+Inspect the existing registration and user-creation process.
+
+- Preserve existing registration functionality.
+- Prevent public users from assigning themselves privileged roles.
+- Student registration must not automatically grant faculty, HOD, resource manager, or administrator privileges.
+- Privileged accounts must be created or assigned through an authorized administrative or institutional provisioning process.
+- Preserve any existing email verification, invitation, or approval mechanisms.
+- Ensure newly created accounts are stored correctly and can log in using their assigned credentials.
+
+---
+
+## 4. Secure Authentication and Session Management
+
+Implement security using the existing backend framework and authentication libraries where possible.
+
+Requirements:
+
+- Hash passwords securely using an established password-hashing algorithm, such as Argon2id or bcrypt.
+- Never store or return plaintext passwords.
+- Do not expose password hashes, secrets, session tokens, or sensitive account information in API responses or logs.
+- Validate and sanitize user inputs appropriately.
+- Use secure session cookies where applicable, including appropriate HttpOnly, Secure, and SameSite settings.
+- If the project uses token-based authentication, validate tokens correctly and handle expiration and revocation appropriately.
+- Implement CSRF protection where required by the chosen authentication strategy.
+- Protect against unauthorized access, privilege escalation, and insecure direct object references.
+- Add sensible login error handling and rate limiting where appropriate.
+- Ensure logout invalidates the relevant session or token according to the existing architecture.
+- Provide or repair a current-user endpoint, such as the existing equivalent of `/me`, if needed by the frontend.
+- Never return privileged information to users who lack permission to access it.
+
+### Existing user migration
+
+If existing user records use an incompatible password format:
+
+1. Inspect the current storage and authentication logic.
+2. Implement a safe migration or password-reset strategy.
+3. Preserve existing user accounts, IDs, departments, booking records, event records, and audit history.
+4. Do not silently reset everyone's password or delete existing accounts.
+5. Do not claim existing passwords work unless they have been verified.
+
+Do not introduce destructive database migrations.
+
+---
+
+## 5. Proper Role-Based Access Control (RBAC)
+
+Authentication determines who the user is. Authorization determines what that user can do.
+
+Enforce authorization on the backend for all protected operations. Hiding buttons in the frontend is not sufficient.
+
+### Student / Club Representative
+
+Must be able to perform the actions permitted by the existing student role, such as:
+
+- Access their own dashboard.
+- Discover available resources.
+- View eligibility requirements and availability.
+- Submit resource booking requests.
+- Submit event requests.
+- View their own event and booking statuses.
+- Review approval feedback and rejection reasons.
+- Access their own permitted booking history, notifications, and records.
+- Complete check-in/check-out actions when authorized by the existing workflow.
+
+Students must not approve their own requests, assign privileged roles, or modify other users' records without explicit authorization.
+
+### Faculty Coordinator
+
+Must be able to:
+
+- Access the existing faculty dashboard.
+- View event and resource requests assigned to them.
+- Review requests from the appropriate students, clubs, and departments.
+- Approve, reject, or return requests for correction where supported.
+- Provide comments or reasons for decisions.
+- Forward requests to the HOD or another required approver.
+- View relevant event details, resource requirements, and approval history.
+- Access only the departments, clubs, or requests they are authorized to manage.
+
+### HOD / Department Approver
+
+Must be able to:
+
+- Access the existing HOD dashboard.
+- View requests requiring HOD or department-level approval.
+- Approve or reject requests within their authority.
+- Review faculty recommendations and approval history.
+- View relevant department events and resource requirements.
+- Ensure decisions are recorded in the database.
+- Avoid approving requests outside their assigned department or authorization scope unless explicitly permitted.
+
+### Resource Manager / Lab In-charge
+
+Must be able to:
+
+- Access the existing resource manager dashboard.
+- Manage resources within their assigned responsibility.
+- Review assigned resource bookings.
+- Verify availability, capacity, scheduling, and conflicts.
+- Confirm or reject resource allocation according to existing rules.
+- Manage check-in/check-out and condition records where authorized.
+- Record damage, delays, and incidents where supported.
+- Prevent unauthorized modifications to resources managed by other users.
+
+### Institution Administrator
+
+Must be able to access the existing administration dashboard and perform the administrative actions explicitly authorized by the application.
+
+An administrator must not automatically bypass every business rule unless the existing system or institutional policy permits it.
+
+### Backend authorization rules
+
+- Apply role and ownership checks to protected API endpoints.
+- Verify department and resource scope where applicable.
+- Prevent students from accessing other students' private records.
+- Prevent users from changing their own role through API requests.
+- Prevent unauthorized approval, event modification, resource allocation, or account administration.
+- Use centralized authorization middleware or existing equivalent patterns where practical.
+- Return appropriate HTTP status codes for unauthenticated and unauthorized requests.
+
+---
+
+## 6. Complete Administration and User Management
+
+Repair or integrate administration functionality within the existing administration dashboard.
+
+Do not create a second administration system if one already exists.
+
+### User management
+
+The administrator should be able to:
+
+- View existing user accounts.
+- Search and filter users by name, email, role, department, and account status where the current schema supports these fields.
+- View relevant user details without exposing passwords or secrets.
+- Create or provision user accounts using the existing user model.
+- Assign and update authorized roles.
+- Assign departments or responsibilities where supported.
+- Enable, disable, or reactivate accounts.
+- Manage pending verification or approval statuses where supported.
+- Review relevant account and role-change history if audit logging already exists or can be integrated minimally.
+
+### Role assignment and safety
+
+- Only authorized administrators may assign privileged roles.
+- Validate all role assignments on the backend.
+- Ensure a user can access the appropriate dashboard after an authorized role change.
+- Apply changed permissions to subsequent requests rather than trusting stale frontend state.
+- Prevent an administrator from accidentally removing or disabling the final active administrator.
+- Preserve existing user IDs and relationships.
+- Prefer deactivation over deleting accounts referenced by events, bookings, incidents, or audit records.
+- Never expose passwords or password hashes in administration screens.
+
+### Account status
+
+Use the existing account-status model if available. Support the relevant states, such as:
+
+- Active
+- Pending verification or approval
+- Disabled
+
+Do not add duplicate status fields or change existing database structures unnecessarily.
+
+---
+
+## 7. FINAL CHANGE: Fix and Connect the Complete Event Flow
+
+This is a specific requested enhancement. Inspect the current event workflow and correct the missing or broken connections while preserving the existing project.
+
+Do not build a separate event management system.
+
+### Step 1: Event creation and submission
+
+A student or authorized club representative must be able to create and submit an event request using the existing event form and workflow.
+
+Preserve the existing fields and validation rules. Where supported, an event may contain:
+
+- Event name and description.
+- Organizing student or club.
+- Department.
+- Event date and time.
+- Venue or resource requirements.
+- Expected attendance or capacity.
+- Equipment requirements.
+- Supporting information.
+- Any other fields already present in the project.
+
+Validate required fields, event dates, user permissions, and resource requirements on the backend.
+
+When submitted, the event must actually be saved to the database and receive the appropriate initial status. Do not merely display a frontend success message.
+
+### Step 2: Route requests to the correct approvers
+
+This is critical: **event requests must reach the correct faculty coordinator and HOD when their approval is required.**
+
+Inspect the existing department, club, faculty, and HOD relationships to determine how requests should be routed.
+
+- Associate the event with the correct student or club and department.
+- Identify the relevant faculty coordinator using existing assignments or relationships.
+- Route the request to the correct faculty coordinator.
+- Where institutional rules require HOD approval, forward the request to the appropriate HOD after the required prior approval.
+- If resource manager approval or confirmation is also required, include it at the appropriate stage.
+- Use the existing workflow rules and preserve any existing approval order.
+- Do not route every request to an arbitrary faculty member, a hardcoded account, or every HOD.
+- Do not automatically approve a request simply because no approver was found.
+
+If the required approver is missing, show a meaningful pending-routing or configuration error and record the issue appropriately. Do not silently discard the request.
+
+### Step 3: Faculty review
+
+The assigned faculty coordinator must be able to see submitted events requiring their review in the existing faculty dashboard.
+
+The faculty coordinator must be able to perform the permitted actions, such as:
+
+- Review event information and requested resources.
+- Approve the faculty review stage.
+- Reject the request with a reason.
+- Request corrections where supported.
+- Forward the request to the HOD or next required approver.
+
+Every decision must be validated on the backend and persisted in the database.
+
+### Step 4: HOD / department approval
+
+Where HOD approval is required:
+
+- The event must appear in the correct HOD dashboard after the preceding required stage is complete.
+- The HOD must be able to review the request and its prior decisions.
+- The HOD must be able to approve or reject the request within their authority.
+- A rejection must include a reason where required by the existing workflow.
+- The decision must update the event's actual persisted status and approval history.
+
+Do not allow an HOD to approve a request that has not completed the required previous approval stages unless existing policy explicitly permits it.
+
+If the current system supports different approval paths for different event types, departments, or resource categories, preserve them.
+
+### Step 5: Resource availability and confirmation
+
+If an event requires a venue, laboratory, equipment, or other bookable resource:
+
+- Integrate the event with the existing resource-booking system.
+- Check resource availability for the requested time.
+- Check for scheduling conflicts and capacity restrictions.
+- Follow the existing resource allocation and approval rules.
+- Route the booking to the appropriate resource manager when required.
+- Prevent conflicting confirmed bookings.
+- Ensure the event and its resource booking remain correctly associated.
+- Avoid creating duplicate bookings when the same event is reviewed or resubmitted.
+
+Do not mark a venue or resource as confirmed until the required approval and allocation steps have succeeded.
+
+If an event does not require a bookable resource, do not force it through an unnecessary resource-booking stage.
+
+### Step 6: Event status and approval history
+
+Ensure event statuses are consistent across all relevant dashboards and API responses.
+
+Reuse the existing status names and transitions wherever possible. Depending on the current implementation, statuses may include:
+
+- Draft
+- Pending
+- Under Review
+- Pending Faculty Approval
+- Pending HOD Approval
+- Pending Resource Confirmation
+- Approved
+- Rejected
+- Changes Requested
+- Cancelled
+- Completed
+
+These are examples, not a requirement to introduce every status. Use the project's current status model and only add a state when it is genuinely necessary for the existing workflow.
+
+Requirements:
+
+- Update the database status whenever an authorized action occurs.
+- Ensure the student, faculty, HOD, resource manager, and administrator see the appropriate current status.
+- Record the decision-maker, action, timestamp, and reason where supported.
+- Preserve the previous approval history.
+- Prevent invalid transitions, duplicate approvals, and unauthorized status changes.
+- Ensure the event creator cannot directly change an event to Approved.
+- Ensure a rejected event does not continue to later approval stages unless the existing resubmission workflow explicitly allows it.
+
+### Step 7: Notifications and event visibility
+
+Use the existing notification system if available.
+
+Notify the relevant users when:
+
+- An event is submitted.
+- A request becomes available for faculty review.
+- Faculty approval is completed or a rejection occurs.
+- HOD approval is required or completed.
+- Resource confirmation is required or completed.
+- An event is approved, rejected, or returned for corrections.
+- A significant event status changes.
+
+Do not create a duplicate notification system unnecessarily.
+
+Ensure each user sees only the events and information permitted by their role, ownership, department, and assigned responsibilities.
+
+### Step 8: Cancellation, resubmission, and existing event features
+
+Preserve and verify any existing cancellation, resubmission, editing, event-history, reporting, and audit functionality.
+
+If an event is edited or resubmitted:
+
+- Apply the existing validation and approval rules.
+- Invalidate or repeat approvals only when required by the current business rules.
+- Preserve previous decision history.
+- Recheck resource availability if the date, time, venue, or equipment changes.
+- Avoid duplicate records or inconsistent statuses.
+
+Do not remove existing event features just because they are not explicitly listed here.
+
+---
+
+## 8. Preserve the Existing Resource-Sharing Lifecycle
+
+All existing resource-sharing features must continue to work:
+
+1. Owners or authorized managers list and maintain resources.
+2. Students discover resources and check eligibility.
+3. Students submit booking requests.
+4. The system validates requests and availability.
+5. Owners, faculty, or managers review requests according to existing rules.
+6. Requests are approved, rejected, or waitlisted where supported.
+7. Authorized users complete check-in and check-out.
+8. Initial and final resource condition details are recorded where supported.
+9. Damage, delays, incidents, and disputes are handled through existing workflows.
+10. Transaction history, audit history, and relevant notifications remain available.
+11. Existing fair-allocation and access rules continue to apply.
+
+The event-flow enhancement must integrate with this lifecycle rather than bypassing or replacing it.
+
+---
+
+## 9. Database and API Integration
+
+Inspect the current database schema, API endpoints, validation, and model relationships before implementation.
+
+- Reuse existing user, event, booking, resource, approval, notification, and audit models.
+- Ensure frontend requests call real backend endpoints.
+- Ensure backend operations persist the expected data.
+- Ensure database relationships correctly associate events, creators, departments, approvers, and resource bookings.
+- Preserve existing API response formats where practical.
+- Keep existing endpoints compatible with the current frontend.
+- Add or modify endpoints only when necessary.
+- Validate incoming identifiers and verify the caller's authorization.
+- Use database transactions or appropriate consistency mechanisms when multiple related operations must succeed together.
+- Avoid duplicate event submissions, duplicate bookings, and duplicate approval records.
+- Handle failed operations without leaving inconsistent statuses or partially allocated resources.
+
+Do not add new database fields or migrations unless required. If a schema change is necessary, make it minimal, safe, and compatible with existing records.
+
+---
+
+## 10. Preserve the Current UI and User Experience
+
+Keep the existing visual design and layouts exactly as they are, except for minimal changes necessary to connect authentication, administration, and the event workflow.
+
+Do not redesign the website.
+
+- Reuse the current login page and form if available.
+- Reuse existing role dashboards and components.
+- Preserve the current navigation, typography, colors, spacing, animations, and responsive behavior.
+- Add only the controls or status information required for the requested functionality.
+- Display clear validation, loading, success, and error states.
+- Ensure that actions such as Submit, Approve, Reject, Forward, and Logout perform real operations.
+- Ensure the interface reflects persisted backend state instead of hardcoded or stale data.
+
+Do not remove existing buttons or features to make the implementation easier.
+
+---
+
+## 11. Demo Accounts and Development Setup
+
+Inspect the current development setup and determine how test accounts are provisioned.
+
+If suitable test accounts are missing, create a safe development-only seed mechanism for the required roles.
+
+The development environment should allow verification of:
+
+- Student / Club Representative
+- Faculty Coordinator
+- HOD / Department Approver
+- Resource Manager / Lab In-charge
+- Institution Administrator
+
+Requirements:
+
+- Store accounts through the same user model and authentication system used by the application.
+- Assign correct roles and departments.
+- Hash passwords using the production-compatible password-hashing approach.
+- Make seed operations idempotent where possible.
+- Preserve existing users and data.
+- Never hardcode production credentials or expose secrets in the repository.
+- Do not reset the database or delete existing records just to create test accounts.
+- Clearly document how authorized developers can provision or reset development test accounts.
+
+Do not claim that demo accounts work until they have actually been created and tested in the current environment.
+
+---
+
+## 12. Required Testing
+
+Do not stop after the code compiles or the login page appears.
+
+Run the existing test suite and add or update focused tests for the changed functionality.
+
+### Authentication tests
+
+- Valid login for each role.
+- Invalid password.
+- Unknown account.
+- Disabled account.
+- Pending-verification account, where applicable.
+- Session persistence after refresh.
+- Logout and session invalidation.
+- Expired session or token.
+- Access to protected routes without authentication.
+- Correct role-based dashboard redirection.
+- Prevention of role escalation through modified client requests.
+
+### Authorization tests
+
+- Students cannot approve their own requests.
+- Faculty cannot access requests outside their authorized scope.
+- HODs can review only the requests within their permitted scope.
+- Resource managers cannot modify resources outside their authority.
+- Administrators can perform authorized user-management actions.
+- Unauthorized users cannot access protected administration endpoints.
+- Users cannot access other users' private records by changing an ID in a URL or API request.
+- Removing or changing a user's role updates their effective permissions.
+
+### Administration tests
+
+- View existing users.
+- Create or provision accounts.
+- Assign roles.
+- Update account status.
+- Disable and reactivate accounts.
+- Verify department assignments.
+- Verify password hashes are never exposed.
+- Verify that the last active administrator cannot be accidentally removed or disabled.
+
+### Complete event-flow tests
+
+Test the real end-to-end workflow:
+
+1. Log in as a student or club representative.
+2. Submit an event request.
+3. Confirm the event is saved in the database.
+4. Confirm it appears in the correct faculty coordinator's dashboard.
+5. Log in as that faculty coordinator.
+6. Approve, reject, or forward the request.
+7. If HOD approval is required, confirm it appears in the correct HOD dashboard.
+8. Log in as the HOD and complete the required decision.
+9. If resource confirmation is required, confirm the request reaches the correct resource manager.
+10. Complete resource confirmation where applicable.
+11. Verify the final event status in the student, faculty, HOD, resource manager, and administration views according to their permissions.
+12. Verify notification delivery or persisted notifications if the system supports them.
+13. Verify approval history and timestamps.
+14. Verify rejected requests do not incorrectly progress.
+15. Verify conflicting resource bookings are prevented.
+16. Verify edits, cancellations, and resubmissions follow the existing rules.
+17. Verify no duplicate event or booking records are created.
+
+### Regression tests
+
+Verify that existing resource discovery, booking, approvals, waitlists, check-in/check-out, condition reporting, incidents, notifications, and audit history continue to work.
+
+Use the project's existing test framework and test database strategy. Do not claim that a test passed unless it was actually executed and passed.
+
+If a test cannot be run because of missing credentials, environment configuration, or unavailable services, state that limitation clearly.
+
+---
+
+## 13. Implementation Process
+
+Follow this sequence:
+
+### Phase A — Audit
+
+Inspect the project and report:
+
+- Existing technology stack.
+- Existing authentication mechanism.
+- Existing roles and dashboards.
+- Existing administration capabilities.
+- Current event submission and approval flow.
+- Relevant models, APIs, middleware, and relationships.
+- Specific defects and missing connections.
+
+Do not begin by replacing existing code.
+
+### Phase B — Plan
+
+Prepare a concise implementation plan showing:
+
+- Which existing files need modification.
+- Which existing components and APIs can be reused.
+- Which authentication or authorization gaps need fixing.
+- Which event-flow transitions or routing connections are missing.
+- Any necessary minimal database changes.
+
+### Phase C — Implement
+
+Implement the required changes in the existing project.
+
+- Make focused, minimal modifications.
+- Preserve current UI and business logic wherever possible.
+- Keep frontend and backend behavior consistent.
+- Preserve existing data and API compatibility.
+- Avoid unrelated refactoring.
+
+### Phase D — Verify
+
+Run the relevant tests and perform end-to-end checks.
+
+Fix any regressions introduced by the changes before declaring completion.
+
+### Phase E — Report
+
+Provide a clear final report containing:
+
+1. Authentication functionality implemented or repaired.
+2. Roles and dashboard routes verified.
+3. Administration features implemented or repaired.
+4. Event-flow defects fixed.
+5. Files changed and the purpose of each change.
+6. Database changes, if any.
+7. Tests actually executed and their results.
+8. Any remaining limitations or manual setup required.
+9. Exact instructions for testing each role and the full event workflow.
+
+---
+
+## 14. Final Acceptance Criteria
+
+The task is complete only when:
+
+- Every existing role can authenticate using valid credentials.
+- Each user is directed to the correct existing dashboard.
+- Protected backend endpoints enforce role-based authorization.
+- Administration can manage user accounts and roles within its authority.
+- Privileged roles cannot be self-assigned by ordinary users.
+- Event requests are persisted in the database.
+- Event requests reach the correct faculty coordinator.
+- Requests proceed to the HOD when required by the existing workflow.
+- Resource confirmation occurs when required.
+- Event statuses, decisions, and histories remain consistent.
+- Notifications work through the existing notification system where supported.
+- Conflicting resource bookings are prevented.
+- The existing resource-sharing lifecycle remains functional.
+- The existing UI and unrelated features remain unchanged.
+- Existing tests pass, and new relevant tests pass or documented blockers are provided.
+- No feature is reported as completed without evidence that it works.
+
+**Final instruction:** Work on the existing ResourceLoop codebase. Prioritize correctness, secure role-based access, proper event routing, and preservation of existing functionality. Inspect first, modify only what is necessary, and verify the complete workflow before reporting completion.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-10-29T00:10:26+05:30.
+</ADDITIONAL_METADATA>
