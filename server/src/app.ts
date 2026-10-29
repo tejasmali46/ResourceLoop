@@ -1,3 +1,7 @@
+if (!process.env.TZ) {
+  process.env.TZ = 'Asia/Kolkata';
+}
+
 import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';

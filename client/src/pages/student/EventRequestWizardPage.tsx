@@ -173,6 +173,7 @@ export const EventRequestWizardPage: React.FC = () => {
         expectedAttendance: Number(expectedAttendance),
         purpose: purpose || 'Educational / Club activity',
         equipmentRequests: selectedEquipment,
+        clientTimezone: typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'Asia/Kolkata',
       };
 
       const res = await api.createEvent(payload);
@@ -491,13 +492,19 @@ export const EventRequestWizardPage: React.FC = () => {
                       {isSelected && <CheckCircle2 className="w-5 h-5 text-teal-600 shrink-0" />}
                     </div>
 
-                    <div className="flex items-center space-x-3 text-slate-500 text-[11px] pt-1">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-500 text-[11px] pt-1">
                       <span className="flex items-center space-x-1">
                         <Users className="w-3.5 h-3.5 text-slate-400" />
                         <span>Cap: {venue.capacity}</span>
                       </span>
                       <span>•</span>
                       <span>{venue.location}</span>
+                      {venue.operatingHours && (
+                        <>
+                          <span>•</span>
+                          <span className="text-teal-700 font-medium">Hours: {venue.operatingHours.start || '08:00'} – {venue.operatingHours.end || '21:00'}</span>
+                        </>
+                      )}
                     </div>
 
                     {!fitsAttendance && (

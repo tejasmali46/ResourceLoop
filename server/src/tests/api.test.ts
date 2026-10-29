@@ -5,6 +5,8 @@ import { connectDB, disconnectDB } from '../config/db.js';
 import { User } from '../models/User.js';
 import { Resource } from '../models/Resource.js';
 import { EventRequest } from '../models/EventRequest.js';
+import { Reservation } from '../models/Reservation.js';
+import { ApprovalTask } from '../models/ApprovalTask.js';
 import { Club } from '../models/Club.js';
 
 const app = createApp();
@@ -31,13 +33,16 @@ describe('ResourceLoop Backend API Tests', () => {
       'Unauthorized Party',
       'Initial Coding Camp',
       'Revised Coding Camp (with Syllabus)',
+      'Multi-Stage Capstone Showcase 2026',
+      'Timezone-Aware Hackathon 2026',
+      'Middle of the Night Event',
     ];
     for (const title of testTitles) {
-      const existing = await EventRequest.findOne({ title });
-      if (existing) {
-        await import('../models/Reservation.js').then((m) => m.Reservation.deleteMany({ event: existing._id }));
+      const existingList = await EventRequest.find({ title });
+      for (const existing of existingList) {
+        await Reservation.deleteMany({ event: existing._id });
         await import('../models/HandoverRecord.js').then((m) => m.HandoverRecord.deleteMany({ event: existing._id }));
-        await import('../models/ApprovalTask.js').then((m) => m.ApprovalTask.deleteMany({ request: existing._id }));
+        await ApprovalTask.deleteMany({ request: existing._id });
         await import('../models/ApprovalDecision.js').then((m) => m.ApprovalDecision.deleteMany({ event: existing._id }));
         await EventRequest.deleteOne({ _id: existing._id });
       }
@@ -1048,5 +1053,57 @@ describe('ResourceLoop Backend API Tests', () => {
     await import('../models/ApprovalDecision.js').then((m) => m.ApprovalDecision.deleteMany({ event: multiStageEventId }));
     await Notification.deleteMany({ relatedEntityId: multiStageEventId });
     await EventRequest.deleteOne({ _id: multiStageEventId });
+  });
+
+  it('39. Operating Hours Timezone Independence: UTC ISO string (05:30Z = 11:00 AM IST) successfully creates event without operating hours conflict', async () => {
+    // 11:00 AM to 02:00 PM IST is 05:30 to 08:30 UTC.
+    // In UTC date.getHours() is 5, but in Asia/Kolkata it is 11 (within 08:00 - 21:00).
+    const startUtc = '2026-11-25T05:30:00.000Z';
+    const endUtc = '2026-11-25T08:30:00.000Z';
+
+    const res = await request(app)
+      .post('/api/v1/events')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .set('x-timezone', 'Asia/Kolkata')
+      .send({
+        title: 'Timezone-Aware Hackathon 2026',
+        description: 'Testing timezone conversion from UTC to Asia/Kolkata campus hours.',
+        eventType: 'HACKATHON',
+        organizingClubId: ecellClubId,
+        departmentId: cseDeptId,
+        facultyCoordinatorId: facultyId,
+        venueId: seminarHallId,
+        startDate: startUtc,
+        endDate: endUtc,
+        expectedAttendance: 40,
+        clientTimezone: 'Asia/Kolkata',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
+    expect(res.body.event).toBeDefined();
+
+    const createdEventId = res.body.event._id;
+
+    // Verify true out-of-operating-hours booking is correctly flagged as conflict (e.g. 03:00 AM IST)
+    const outOfHoursCheck = await request(app)
+      .post('/api/v1/resources/check-availability')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        resourceId: seminarHallId,
+        startDate: '2026-11-25T21:30:00.000Z', // 03:00 AM IST
+        endDate: '2026-11-25T23:30:00.000Z',   // 05:00 AM IST
+        quantity: 1,
+        clientTimezone: 'Asia/Kolkata',
+      });
+
+    expect(outOfHoursCheck.status).toBe(200);
+    expect(outOfHoursCheck.body.data.isAvailable).toBe(false);
+    expect(outOfHoursCheck.body.data.conflictReason).toContain('Requested time is outside operating hours');
+
+    // Clean up
+    await Reservation.deleteMany({ event: createdEventId });
+    await ApprovalTask.deleteMany({ request: createdEventId });
+    await EventRequest.deleteOne({ _id: createdEventId });
   });
 });

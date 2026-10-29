@@ -65,12 +65,15 @@ export async function getResourceById(req: Request, res: Response, next: NextFun
     }
 
     let availabilityInfo = null;
+    const clientTimezone = (req.query.timezone || req.headers['x-timezone']) as string | undefined;
     if (startDate && endDate) {
       availabilityInfo = await checkResourceAvailability(
         resource._id,
         new Date(String(startDate)),
         new Date(String(endDate)),
-        quantity ? Number(quantity) : 1
+        quantity ? Number(quantity) : 1,
+        undefined,
+        clientTimezone
       );
     }
 
@@ -117,12 +120,15 @@ export async function checkAvailability(req: Request, res: Response, next: NextF
       return;
     }
 
+    const clientTimezone = (req.body.clientTimezone || req.headers['x-timezone']) as string | undefined;
+
     const result = await checkResourceAvailability(
       resourceId,
       start,
       end,
       Number(quantity),
-      excludeEventId
+      excludeEventId,
+      clientTimezone
     );
 
     res.status(200).json({

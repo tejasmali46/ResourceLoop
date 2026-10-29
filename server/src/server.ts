@@ -1,3 +1,7 @@
+if (!process.env.TZ) {
+  process.env.TZ = 'Asia/Kolkata';
+}
+
 import { createApp } from './app.js';
 import { connectDB } from './config/db.js';
 import { ENV } from './config/env.js';

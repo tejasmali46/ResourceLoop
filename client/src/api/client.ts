@@ -13,8 +13,10 @@ export class ApiError extends Error {
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('resourceloop_token');
+  const userTimezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'Asia/Kolkata';
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'x-timezone': userTimezone,
     ...(options.headers as Record<string, string>),
   };
 

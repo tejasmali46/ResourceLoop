@@ -97,6 +97,8 @@ export async function createEventRequest(req: AuthRequest, res: Response, next: 
     // Attendance >= 100, or venue explicitly requires HOD, or any requested equipment requires HOD
     let requiresHod = Number(expectedAttendance) >= 100;
 
+    const clientTimezone = (req.body.clientTimezone || req.headers['x-timezone']) as string | undefined;
+
     // Validate Venue if selected
     if (venueId) {
       const venue = await Resource.findById(venueId);
@@ -116,7 +118,7 @@ export async function createEventRequest(req: AuthRequest, res: Response, next: 
       }
 
       // Check venue availability
-      const venueAvail = await checkResourceAvailability(venue._id, start, end, 1);
+      const venueAvail = await checkResourceAvailability(venue._id, start, end, 1, undefined, clientTimezone);
       if (!venueAvail.isAvailable && !isDraft) {
         res.status(409).json({
           success: false,
@@ -142,7 +144,9 @@ export async function createEventRequest(req: AuthRequest, res: Response, next: 
         resource._id,
         start,
         end,
-        Number(eq.quantity || 1)
+        Number(eq.quantity || 1),
+        undefined,
+        clientTimezone
       );
 
       if (!eqAvail.isAvailable && !isDraft) {
@@ -333,9 +337,11 @@ export async function resubmitEventRequest(req: AuthRequest, res: Response, next
       return;
     }
 
+    const clientTimezone = (req.body.clientTimezone || req.headers['x-timezone']) as string | undefined;
+
     // Availability verification on new dates/venue if changed
     if (venueId) {
-      const venueAvail = await checkResourceAvailability(venueId, start, end, 1, event._id);
+      const venueAvail = await checkResourceAvailability(venueId, start, end, 1, event._id, clientTimezone);
       if (!venueAvail.isAvailable) {
         res.status(409).json({
           success: false,

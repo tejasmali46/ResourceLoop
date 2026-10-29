@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { Resource, IResource } from '../models/Resource.js';
 import { Reservation, IReservation } from '../models/Reservation.js';
 import { EventRequest } from '../models/EventRequest.js';
+import { ENV } from '../config/env.js';
 import { createNotification } from './notificationService.js';
 import { logAuditEvent } from './auditService.js';
 
@@ -25,27 +26,89 @@ export interface AvailabilityCheckResult {
 }
 
 /**
+ * Extracts local hour, minute and total minutes for a given date in a specific timezone.
+ */
+export function getTimeInTimezone(
+  date: Date,
+  timeZone?: string
+): { hours: number; minutes: number; totalMinutes: number } {
+  if (timeZone) {
+    try {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: false,
+      });
+      const parts = formatter.formatToParts(date);
+      let hours = 0;
+      let minutes = 0;
+      for (const part of parts) {
+        if (part.type === 'hour') {
+          hours = parseInt(part.value, 10);
+          if (hours === 24) hours = 0;
+        } else if (part.type === 'minute') {
+          minutes = parseInt(part.value, 10);
+        }
+      }
+      return { hours, minutes, totalMinutes: hours * 60 + minutes };
+    } catch {
+      // Fall through to system local
+    }
+  }
+
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  return { hours, minutes, totalMinutes: hours * 60 + minutes };
+}
+
+/**
  * Checks operating hours for a given time window against resource operating hours.
+ * Uses institution timezone (e.g. Asia/Kolkata) and client timezone so cloud servers
+ * running in UTC do not reject valid local bookings.
  */
 export function checkOperatingHours(
   resource: IResource,
   startDate: Date,
-  endDate: Date
+  endDate: Date,
+  clientTimezone?: string
 ): { valid: boolean; reason?: string } {
-  const startHours = startDate.getHours();
-  const startMinutes = startDate.getMinutes();
-  const endHours = endDate.getHours();
-  const endMinutes = endDate.getMinutes();
+  if (!resource.operatingHours || !resource.operatingHours.start || !resource.operatingHours.end) {
+    return { valid: true };
+  }
 
   const [opStartH, opStartM] = resource.operatingHours.start.split(':').map(Number);
   const [opEndH, opEndM] = resource.operatingHours.end.split(':').map(Number);
 
-  const startTotal = startHours * 60 + startMinutes;
-  const endTotal = endHours * 60 + endMinutes;
-  const opStartTotal = opStartH * 60 + opStartM;
-  const opEndTotal = opEndH * 60 + opEndM;
+  const opStartTotal = opStartH * 60 + (opStartM || 0);
+  const opEndTotal = opEndH * 60 + (opEndM || 0);
 
-  if (startTotal < opStartTotal || endTotal > opEndTotal) {
+  // Candidate timezones to evaluate:
+  // 1. Client's reported timezone (e.g. from browser x-timezone header or payload)
+  // 2. Configured institution timezone (ENV.INSTITUTION_TIMEZONE or 'Asia/Kolkata')
+  // 3. 'Asia/Kolkata' (Apex University standard campus timezone)
+  // 4. Host node local timezone fallback
+  const candidateTimezones = [
+    clientTimezone,
+    ENV.INSTITUTION_TIMEZONE,
+    'Asia/Kolkata',
+  ].filter((tz): tz is string => Boolean(tz && typeof tz === 'string' && tz.trim().length > 0));
+
+  const timezonesToCheck: Array<string | undefined> = [...new Set(candidateTimezones), undefined];
+
+  let anyValid = false;
+
+  for (const tz of timezonesToCheck) {
+    const startInfo = getTimeInTimezone(startDate, tz);
+    const endInfo = getTimeInTimezone(endDate, tz);
+
+    if (startInfo.totalMinutes >= opStartTotal && endInfo.totalMinutes <= opEndTotal) {
+      anyValid = true;
+      break;
+    }
+  }
+
+  if (!anyValid) {
     return {
       valid: false,
       reason: `Requested time is outside operating hours (${resource.operatingHours.start} - ${resource.operatingHours.end})`,
@@ -90,7 +153,8 @@ export async function checkResourceAvailability(
   startDate: Date,
   endDate: Date,
   requestedQuantity: number = 1,
-  excludeEventId?: mongoose.Types.ObjectId | string
+  excludeEventId?: mongoose.Types.ObjectId | string,
+  clientTimezone?: string
 ): Promise<AvailabilityCheckResult> {
   const resource = await Resource.findById(resourceId);
   if (!resource) {
@@ -115,8 +179,8 @@ export async function checkResourceAvailability(
     };
   }
 
-  // 2. Operating hours check
-  const hoursCheck = checkOperatingHours(resource, startDate, endDate);
+  // 2. Operating hours check (timezone-aware)
+  const hoursCheck = checkOperatingHours(resource, startDate, endDate, clientTimezone);
   if (!hoursCheck.valid) {
     return {
       isAvailable: false,
@@ -163,7 +227,8 @@ export async function checkResourceAvailability(
       startDate,
       endDate,
       requestedQuantity,
-      excludeEventId
+      excludeEventId,
+      clientTimezone
     );
   }
 
@@ -188,13 +253,11 @@ export async function findAlternativeSlots(
   originalStart: Date,
   originalEnd: Date,
   requestedQuantity: number,
-  excludeEventId?: mongoose.Types.ObjectId | string
+  excludeEventId?: mongoose.Types.ObjectId | string,
+  clientTimezone?: string
 ): Promise<Array<{ startDate: Date; endDate: Date; availableQuantity: number }>> {
   const durationMs = originalEnd.getTime() - originalStart.getTime();
   const suggestions: Array<{ startDate: Date; endDate: Date; availableQuantity: number }> = [];
-
-  const [opStartH] = resource.operatingHours.start.split(':').map(Number);
-  const [opEndH] = resource.operatingHours.end.split(':').map(Number);
 
   // Check 3 slots: +2 hours, +4 hours, and next day at original start time
   const testOffsets = [
@@ -207,10 +270,9 @@ export async function findAlternativeSlots(
     const testStart = new Date(originalStart.getTime() + offset);
     const testEnd = new Date(testStart.getTime() + durationMs);
 
-    // Validate operating hours for candidate slot
-    const startH = testStart.getHours();
-    const endH = testEnd.getHours();
-    if (startH < opStartH || endH > opEndH) continue;
+    // Validate operating hours for candidate slot using timezone awareness
+    const hoursCheck = checkOperatingHours(resource, testStart, testEnd, clientTimezone);
+    if (!hoursCheck.valid) continue;
 
     const query: any = {
       resource: resource._id,
