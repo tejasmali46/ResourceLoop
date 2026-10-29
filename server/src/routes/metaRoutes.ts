@@ -8,6 +8,7 @@ import {
   getFacultyList,
   getSettings,
   updateSettings,
+  triggerSeed,
 } from '../controllers/departmentClubController.js';
 import { authenticate, requireRoles } from '../middleware/auth.js';
 
@@ -18,6 +19,7 @@ router.get('/departments', getDepartments);
 router.get('/clubs', getClubs);
 router.get('/faculty', getFacultyList);
 router.get('/settings', getSettings);
+router.all('/seed', triggerSeed);
 
 // Admin-only management routes
 router.post('/departments', authenticate, requireRoles('ADMIN'), createDepartment);

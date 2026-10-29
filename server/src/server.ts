@@ -1,10 +1,24 @@
 import { createApp } from './app.js';
 import { connectDB } from './config/db.js';
 import { ENV } from './config/env.js';
+import { User } from './models/User.js';
+import { seedDatabase } from './scripts/seed.js';
 
 async function bootstrap() {
   try {
     await connectDB();
+
+    // Auto-seed demo accounts if MongoDB database is completely empty (e.g. on fresh Render/Atlas deploy)
+    try {
+      const userCount = await User.countDocuments();
+      if (userCount === 0) {
+        console.log('🌱 Empty database detected on startup. Initializing demo accounts and resources...');
+        await seedDatabase(false);
+      }
+    } catch (seedErr) {
+      console.warn('Auto-seed check skipped or failed:', seedErr);
+    }
+
     const app = createApp();
 
     const server = app.listen(ENV.PORT, () => {

@@ -16,28 +16,29 @@ import { Notification } from '../models/Notification.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { InstitutionSettings } from '../models/InstitutionSettings.js';
 
-async function seed() {
+export async function seedDatabase(clearExisting = true): Promise<void> {
   console.log('[Seed] Starting database seeding for ResourceLoop...');
-  await connectDB();
 
-  // Clear existing collections safely for a clean testbed
-  console.log('[Seed] Clearing previous records...');
-  await Promise.all([
-    User.deleteMany({}),
-    Department.deleteMany({}),
-    Club.deleteMany({}),
-    Resource.deleteMany({}),
-    EventRequest.deleteMany({}),
-    Reservation.deleteMany({}),
-    ApprovalPolicy.deleteMany({}),
-    ApprovalDecision.deleteMany({}),
-    ApprovalTask.deleteMany({}),
-    HandoverRecord.deleteMany({}),
-    Incident.deleteMany({}),
-    Notification.deleteMany({}),
-    AuditLog.deleteMany({}),
-    InstitutionSettings.deleteMany({}),
-  ]);
+  // Clear existing collections safely for a clean testbed if requested
+  if (clearExisting) {
+    console.log('[Seed] Clearing previous records...');
+    await Promise.all([
+      User.deleteMany({}),
+      Department.deleteMany({}),
+      Club.deleteMany({}),
+      Resource.deleteMany({}),
+      EventRequest.deleteMany({}),
+      Reservation.deleteMany({}),
+      ApprovalPolicy.deleteMany({}),
+      ApprovalDecision.deleteMany({}),
+      ApprovalTask.deleteMany({}),
+      HandoverRecord.deleteMany({}),
+      Incident.deleteMany({}),
+      Notification.deleteMany({}),
+      AuditLog.deleteMany({}),
+      InstitutionSettings.deleteMany({}),
+    ]);
+  }
 
   // 1. Create Institution Settings
   await InstitutionSettings.create({
@@ -877,11 +878,18 @@ async function seed() {
   console.log('5. Student (E-Cell): student.ecell@resourceloop.edu');
   console.log('6. Student (Coding): student.coding@resourceloop.edu');
   console.log('====================================================');
+}
 
+async function runCli() {
+  await connectDB();
+  await seedDatabase(true);
   await disconnectDB();
 }
 
-seed().catch((err) => {
-  console.error('[Seed] Error during seeding:', err);
-  process.exit(1);
-});
+const isDirectRun = process.argv[1] && (process.argv[1].endsWith('seed.ts') || process.argv[1].endsWith('seed.js'));
+if (isDirectRun) {
+  runCli().catch((err) => {
+    console.error('[Seed] Error during seeding:', err);
+    process.exit(1);
+  });
+}

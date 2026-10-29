@@ -36,6 +36,28 @@ export function createApp(): Express {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use('/api', apiLimiter);
 
+  // Root welcome / status endpoint
+  app.get('/', (req: Request, res: Response) => {
+    res.status(200).json({
+      success: true,
+      service: 'ResourceLoop Core API',
+      version: '1.0.0',
+      status: 'ONLINE',
+      institution: 'Apex University of Technology & Sciences',
+      endpoints: {
+        health: '/health',
+        apiV1: '/api/v1',
+        auth: '/api/v1/auth',
+        resources: '/api/v1/resources',
+        events: '/api/v1/events',
+        approvals: '/api/v1/approvals',
+        users: '/api/v1/users',
+        meta: '/api/v1/meta',
+      },
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   // Health check endpoint
   app.get('/health', (req: Request, res: Response) => {
     res.status(200).json({

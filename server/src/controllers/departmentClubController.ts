@@ -108,3 +108,28 @@ export async function updateSettings(req: AuthRequest, res: Response, next: Next
     next(error);
   }
 }
+
+export async function triggerSeed(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { seedDatabase } = await import('../scripts/seed.js');
+    const userCount = await User.countDocuments();
+    const force = req.query.force === 'true' || req.body.force === true;
+
+    if (userCount > 0 && !force) {
+      res.status(200).json({
+        success: true,
+        message: 'Database already initialized with existing records. Pass ?force=true to reset.',
+        existingUsers: userCount,
+      });
+      return;
+    }
+
+    await seedDatabase(force);
+    res.status(200).json({
+      success: true,
+      message: 'Demo accounts, departments, and resources seeded successfully into database.',
+    });
+  } catch (error) {
+    next(error);
+  }
+}
